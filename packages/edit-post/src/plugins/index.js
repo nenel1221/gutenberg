@@ -3,6 +3,8 @@
  */
 import { MenuItem } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
+import { FilteredComponent } from '@wordpress/interface';
+import { MediaUpload } from '@wordpress/media-utils';
 import { registerPlugin } from '@wordpress/plugins';
 import { addQueryArgs } from '@wordpress/url';
 
@@ -19,6 +21,11 @@ registerPlugin( 'edit-post', {
 	render() {
 		return (
 			<>
+				<FilteredComponent
+					hookName="editor.MediaUpload"
+					namespace="core/edit-post/replace-media-upload"
+					as={ MediaUpload }
+				/>
 				<ToolsMoreMenuGroup>
 					{ ( { onClose } ) => (
 						<>
