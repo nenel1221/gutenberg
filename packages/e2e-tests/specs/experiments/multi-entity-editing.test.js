@@ -23,6 +23,10 @@ const visitSiteEditor = async () => {
 		page: 'gutenberg-edit-site',
 	} ).slice( 1 );
 	await visitAdminPage( 'admin.php', query );
+	// Waits for the template part to load...
+	await page.waitForSelector(
+		'.wp-block[data-type="core/template-part"] .block-editor-inner-blocks'
+	);
 };
 
 const createTemplate = async ( templateName = 'test-template' ) => {
@@ -73,12 +77,11 @@ const createTemplatePart = async (
 	);
 };
 
-const editTemplatePart = async ( textToAdd, nextText ) => {
+const editTemplatePart = async ( textToAdd ) => {
 	await page.click( 'div[data-type="core/template-part"]' );
-	await page.keyboard.type( textToAdd );
-	if ( nextText ) {
+	for ( const text of textToAdd ) {
+		await page.keyboard.type( text );
 		await page.keyboard.press( 'Enter' );
-		await page.keyboard.type( nextText );
 	}
 };
 
@@ -137,30 +140,51 @@ describe( 'Multi-entity editor states', () => {
 		await enableExperimentalFeatures( requiredExperiments );
 		await trashExistingPosts( 'wp_template' );
 		await trashExistingPosts( 'wp_template_part' );
-
-		await visitSiteEditor();
-		await createTemplate( templateName );
-		await createTemplatePart( templatePartName );
-		await editTemplatePart(
-			'Default template part test text.',
-			'Second paragraph test.'
-		);
-		await saveAllEntities();
 	} );
 
 	afterAll( async () => {
 		await disableExperimentalFeatures( requiredExperiments );
 	} );
-	afterEach( async () => {
+
+	it( 'should not display any dirty entities when loading the site editor', async () => {
+		await visitSiteEditor();
+		expect( await openEntitySavePanel() ).toBe( true );
+
 		await saveAllEntities();
+		await visitSiteEditor();
+
+		// Unable to open the save panel implies that no entities are dirty.
+		expect( await openEntitySavePanel() ).toBe( false );
 	} );
 
 	describe( 'Multi-entity edit', () => {
-		it( 'should not have any dirty entities when viewing the editor', async () => {
-			const isParentEntityDirty = await isEntityDirty( templateName );
-			const isChildEntityDirty = await isEntityDirty( templatePartName );
-			expect( isParentEntityDirty ).toBe( false );
-			expect( isChildEntityDirty ).toBe( false );
+		beforeAll( async () => {
+			await visitSiteEditor();
+			await createTemplate( templateName );
+			await createTemplatePart( templatePartName );
+			await editTemplatePart( [
+				'Default template part test text.',
+				'Second paragraph test.',
+			] );
+			await saveAllEntities();
+			// TODO: Add back console mocks when
+			// https://github.com/WordPress/gutenberg/issues/17355 is fixed.
+			/* eslint-disable no-console */
+			console.warn.mockReset();
+			console.error.mockReset();
+			console.info.mockReset();
+			/* eslint-enable no-console */
+		} );
+
+		afterEach( async () => {
+			await saveAllEntities();
+			// TODO: Add back console mocks when
+			// https://github.com/WordPress/gutenberg/issues/17355 is fixed.
+			/* eslint-disable no-console */
+			console.warn.mockReset();
+			console.error.mockReset();
+			console.info.mockReset();
+			/* eslint-enable no-console */
 		} );
 
 		it( 'should only dirty the parent entity when editing the parent', async () => {
@@ -176,7 +200,6 @@ describe( 'Multi-entity editor states', () => {
 
 			expect( isParentEntityDirty ).toBe( true );
 			expect( isChildEntityDirty ).toBe( false );
-			await saveAllEntities();
 		} );
 
 		it( 'should only dirty the child when editing the child', async () => {
@@ -184,7 +207,6 @@ describe( 'Multi-entity editor states', () => {
 				'.wp-block[data-type="core/template-part"] .wp-block[data-type="core/paragraph"]'
 			);
 			await page.keyboard.type( 'Some more test words!' );
-			await page.keyboard.press( 'Enter' );
 
 			const isParentEntityDirty = await isEntityDirty( templateName );
 			const isChildEntityDirty = await isEntityDirty( templatePartName );
