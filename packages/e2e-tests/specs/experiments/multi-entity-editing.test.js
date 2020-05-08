@@ -63,7 +63,8 @@ const createTemplate = async ( templateName = 'test-template' ) => {
 
 const createTemplatePart = async (
 	templatePartName = 'test-template-part',
-	themeName = 'test-theme'
+	themeName = 'test-theme',
+	isNested = false
 ) => {
 	// Create new template part.
 	await insertBlock( 'Template Part' );
@@ -73,12 +74,18 @@ const createTemplatePart = async (
 	await page.keyboard.press( 'Tab' );
 	await page.keyboard.press( 'Enter' );
 	await page.waitForSelector(
-		'div[data-type="core/template-part"] .block-editor-inner-blocks'
+		isNested
+			? '.wp-block[data-type="core/template-part"] .wp-block[data-type="core/template-part"] .block-editor-inner-blocks'
+			: '.wp-block[data-type="core/template-part"] .block-editor-inner-blocks'
 	);
 };
 
-const editTemplatePart = async ( textToAdd ) => {
-	await page.click( 'div[data-type="core/template-part"]' );
+const editTemplatePart = async ( textToAdd, isNested = false ) => {
+	await page.click(
+		isNested
+			? '.wp-block[data-type="core/template-part"] .wp-block[data-type="core/template-part"]'
+			: '.wp-block[data-type="core/template-part"]'
+	);
 	for ( const text of textToAdd ) {
 		await page.keyboard.type( text );
 		await page.keyboard.press( 'Enter' );
@@ -133,8 +140,10 @@ describe( 'Multi-entity editor states', () => {
 		'#gutenberg-full-site-editing',
 		'#gutenberg-full-site-editing-demo',
 	];
+
 	const templatePartName = 'Test Template Part Name Edit';
 	const templateName = 'Test Template Name Edit';
+	const nestedTPName = 'Test Nested Template Part Name Edit';
 
 	beforeAll( async () => {
 		await enableExperimentalFeatures( requiredExperiments );
@@ -166,6 +175,11 @@ describe( 'Multi-entity editor states', () => {
 				'Default template part test text.',
 				'Second paragraph test.',
 			] );
+			await createTemplatePart( nestedTPName, 'test-theme', true );
+			await editTemplatePart(
+				[ 'Nested Template Part Text.', 'Second Nested test.' ],
+				true
+			);
 			await saveAllEntities();
 			// TODO: Add back console mocks when
 			// https://github.com/WordPress/gutenberg/issues/17355 is fixed.
@@ -195,11 +209,9 @@ describe( 'Multi-entity editor states', () => {
 			// Add changes to the main parent entity.
 			await page.keyboard.type( 'Test.' );
 
-			const isParentEntityDirty = await isEntityDirty( templateName );
-			const isChildEntityDirty = await isEntityDirty( templatePartName );
-
-			expect( isParentEntityDirty ).toBe( true );
-			expect( isChildEntityDirty ).toBe( false );
+			expect( await isEntityDirty( templateName ) ).toBe( true );
+			expect( await isEntityDirty( templatePartName ) ).toBe( false );
+			expect( await isEntityDirty( nestedTPName ) ).toBe( false );
 		} );
 
 		it( 'should only dirty the child when editing the child', async () => {
@@ -208,11 +220,20 @@ describe( 'Multi-entity editor states', () => {
 			);
 			await page.keyboard.type( 'Some more test words!' );
 
-			const isParentEntityDirty = await isEntityDirty( templateName );
-			const isChildEntityDirty = await isEntityDirty( templatePartName );
+			expect( await isEntityDirty( templateName ) ).toBe( false );
+			expect( await isEntityDirty( templatePartName ) ).toBe( true );
+			expect( await isEntityDirty( nestedTPName ) ).toBe( false );
+		} );
 
-			expect( isParentEntityDirty ).toBe( false );
-			expect( isChildEntityDirty ).toBe( true );
+		it( 'should only dirty the nested entity when editing the nested entity', async () => {
+			await page.click(
+				'.wp-block[data-type="core/template-part"] .wp-block[data-type="core/template-part"] .wp-block[data-type="core/paragraph"]'
+			);
+			await page.keyboard.type( 'Nested test words!' );
+
+			expect( await isEntityDirty( templateName ) ).toBe( false );
+			expect( await isEntityDirty( templatePartName ) ).toBe( false );
+			expect( await isEntityDirty( nestedTPName ) ).toBe( true );
 		} );
 	} );
 } );
