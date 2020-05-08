@@ -29,17 +29,25 @@ const visitSiteEditor = async () => {
 	);
 };
 
-const createTemplate = async ( templateName = 'test-template' ) => {
+const openTemplateDropdown = async () => {
 	// Open the dropdown menu.
 	const templateDropdown =
 		'button.components-dropdown-menu__toggle[aria-label="Switch Template"]';
 	await page.click( templateDropdown );
 	await page.waitForSelector( '.edit-site-template-switcher__popover' );
+};
 
-	// Click the "new template" button.
-	const [ createNewTemplateButton ] = await page.$x(
-		'//div[contains(@class, "edit-site-template-switcher__popover")]//button[contains(., "New")]'
+const getTemplateDropdownElement = async ( itemName ) => {
+	await openTemplateDropdown();
+	const [ item ] = await page.$x(
+		`//div[contains(@class, "edit-site-template-switcher__popover")]//button[contains(., "${ itemName }")]`
 	);
+	return item;
+};
+
+const createTemplate = async ( templateName = 'Test Template' ) => {
+	// Click the "new template" button.
+	const createNewTemplateButton = await getTemplateDropdownElement( 'New' );
 	await createNewTemplateButton.click();
 	await page.waitForSelector( '.components-modal__frame' );
 
@@ -134,6 +142,16 @@ const isEntityDirty = async ( name ) => {
 	return false;
 };
 
+const removeErrorMocks = () => {
+	// TODO: Add back console mocks when
+	// https://github.com/WordPress/gutenberg/issues/17355 is fixed.
+	/* eslint-disable no-console */
+	console.warn.mockReset();
+	console.error.mockReset();
+	console.info.mockReset();
+	/* eslint-enable no-console */
+};
+
 describe( 'Multi-entity editor states', () => {
 	// Setup & Teardown.
 	const requiredExperiments = [
@@ -166,6 +184,25 @@ describe( 'Multi-entity editor states', () => {
 		expect( await openEntitySavePanel() ).toBe( false );
 	} );
 
+	it( 'should not dirty an entity by switching to it in the template dropdown', async () => {
+		const templatePartButton = await getTemplateDropdownElement( 'header' );
+		await templatePartButton.click();
+
+		// Wait for blocks to load.
+		await page.waitForSelector( '.wp-block' );
+		expect( await isEntityDirty( 'header' ) ).toBe( false );
+		expect( await isEntityDirty( 'front-page' ) ).toBe( false );
+
+		// Switch back and make sure it is still clean.
+		const templateButton = await getTemplateDropdownElement( 'front-page' );
+		await templateButton.click();
+		await page.waitForSelector( '.wp-block' );
+		expect( await isEntityDirty( 'header' ) ).toBe( false );
+		expect( await isEntityDirty( 'front-page' ) ).toBe( false );
+
+		removeErrorMocks();
+	} );
+
 	describe( 'Multi-entity edit', () => {
 		beforeAll( async () => {
 			await visitSiteEditor();
@@ -181,24 +218,12 @@ describe( 'Multi-entity editor states', () => {
 				true
 			);
 			await saveAllEntities();
-			// TODO: Add back console mocks when
-			// https://github.com/WordPress/gutenberg/issues/17355 is fixed.
-			/* eslint-disable no-console */
-			console.warn.mockReset();
-			console.error.mockReset();
-			console.info.mockReset();
-			/* eslint-enable no-console */
+			removeErrorMocks();
 		} );
 
 		afterEach( async () => {
 			await saveAllEntities();
-			// TODO: Add back console mocks when
-			// https://github.com/WordPress/gutenberg/issues/17355 is fixed.
-			/* eslint-disable no-console */
-			console.warn.mockReset();
-			console.error.mockReset();
-			console.info.mockReset();
-			/* eslint-enable no-console */
+			removeErrorMocks();
 		} );
 
 		it( 'should only dirty the parent entity when editing the parent', async () => {
@@ -234,6 +259,20 @@ describe( 'Multi-entity editor states', () => {
 			expect( await isEntityDirty( templateName ) ).toBe( false );
 			expect( await isEntityDirty( templatePartName ) ).toBe( false );
 			expect( await isEntityDirty( nestedTPName ) ).toBe( true );
+		} );
+
+		it( 'should not dirty any entities when hovering over template preview', async () => {
+			const mainTemplateButton = await getTemplateDropdownElement(
+				kebabCase( templateName )
+			);
+			// Hover and wait for template/template part to load.
+			await mainTemplateButton.hover();
+			await page.waitForSelector(
+				'.edit-site-template-switcher__template-preview .wp-block[data-type="core/template-part"]'
+			);
+			expect( await isEntityDirty( templateName ) ).toBe( false );
+			expect( await isEntityDirty( templatePartName ) ).toBe( false );
+			expect( await isEntityDirty( nestedTPName ) ).toBe( false );
 		} );
 	} );
 } );
