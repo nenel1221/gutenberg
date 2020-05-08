@@ -73,9 +73,13 @@ const createTemplatePart = async (
 	);
 };
 
-const editTemplatePart = async ( textToAdd ) => {
+const editTemplatePart = async ( textToAdd, nextText ) => {
 	await page.click( 'div[data-type="core/template-part"]' );
 	await page.keyboard.type( textToAdd );
+	if ( nextText ) {
+		await page.keyboard.press( 'Enter' );
+		await page.keyboard.type( nextText );
+	}
 };
 
 const saveAllEntities = async () => {
@@ -112,7 +116,8 @@ const isEntityDirty = async ( name ) => {
 	}
 	try {
 		await page.waitForXPath(
-			`//label[@class="components-checkbox-control__label"]//strong[contains(text(),"${ name }")]`
+			`//label[@class="components-checkbox-control__label"]//strong[contains(text(),"${ name }")]`,
+			{ timeout: 500 }
 		);
 		return true;
 	} catch {}
@@ -136,15 +141,28 @@ describe( 'Multi-entity editor states', () => {
 		await visitSiteEditor();
 		await createTemplate( templateName );
 		await createTemplatePart( templatePartName );
-		await editTemplatePart( 'Default template part test text.' );
+		await editTemplatePart(
+			'Default template part test text.',
+			'Second paragraph test.'
+		);
 		await saveAllEntities();
 	} );
 
 	afterAll( async () => {
 		await disableExperimentalFeatures( requiredExperiments );
 	} );
+	afterEach( async () => {
+		await saveAllEntities();
+	} );
 
 	describe( 'Multi-entity edit', () => {
+		it( 'should not have any dirty entities when viewing the editor', async () => {
+			const isParentEntityDirty = await isEntityDirty( templateName );
+			const isChildEntityDirty = await isEntityDirty( templatePartName );
+			expect( isParentEntityDirty ).toBe( false );
+			expect( isChildEntityDirty ).toBe( false );
+		} );
+
 		it( 'should only dirty the parent entity when editing the parent', async () => {
 			await page.click( '.block-editor-button-block-appender' );
 			await page.waitForSelector( '.block-editor-inserter__menu' );
@@ -158,35 +176,21 @@ describe( 'Multi-entity editor states', () => {
 
 			expect( isParentEntityDirty ).toBe( true );
 			expect( isChildEntityDirty ).toBe( false );
+			await saveAllEntities();
 		} );
 
-		it.skip( 'should only dirty the child when editing the child', () => {} );
+		it( 'should only dirty the child when editing the child', async () => {
+			await page.click(
+				'.wp-block[data-type="core/template-part"] .wp-block[data-type="core/paragraph"]'
+			);
+			await page.keyboard.type( 'Some more test words!' );
+			await page.keyboard.press( 'Enter' );
 
-		it.skip( 'should only dirty the grandchild when editing the grandchild', () => {} );
-	} );
+			const isParentEntityDirty = await isEntityDirty( templateName );
+			const isChildEntityDirty = await isEntityDirty( templatePartName );
 
-	describe.skip( 'Switching to another entity', () => {
-		it( 'should not delete nested entity blocks when zooming in', () => {} );
-		it( 'should not delete nested entity blocks when displaying the preview', () => {} );
-		it( 'should not delete nested entity blocks when switching back to the top-level entity', () => {} );
-		it( 'should not dirty any entities', () => {} );
-		it( 'should not dirty any entities after switching back', () => {} );
-		it( 'should not dirty any entities when displaying the preview', () => {} );
-	} );
-
-	describe.skip( 'Multi-entity undo', () => {
-		describe( 'Undoing a change to a parent entity', () => {
-			it( 'should only undo the parent entity', async () => {} );
-			it( 'should not delete other entities from the editor', () => {} );
-		} );
-
-		describe( 'Undoing a change to a child entity', () => {
-			it( 'should only undo the parent entity', () => {} );
-			it( 'should not delete a child entity', () => {} );
-		} );
-
-		describe( 'Undoing changes with multi-nested child entities', () => {
-			it( 'should only undo itself without affecting parents', () => {} );
+			expect( isParentEntityDirty ).toBe( false );
+			expect( isChildEntityDirty ).toBe( true );
 		} );
 	} );
 } );
